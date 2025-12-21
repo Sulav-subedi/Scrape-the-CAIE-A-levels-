@@ -35,6 +35,7 @@ Requirements:
 1. Python 3.9+
 2. aiohttp
 3. beautifulsoup4
+4. pymupdf
 
 
 ## This project was created for learning purposes to explore asynchronous programming, GUI development, web scraping, and file organization in Python.
