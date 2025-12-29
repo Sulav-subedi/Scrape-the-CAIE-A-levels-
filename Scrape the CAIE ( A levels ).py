@@ -1,6 +1,5 @@
 import aiohttp
 import asyncio
-import os
 import threading
 import tkinter as tk
 from tkinter import ttk
@@ -8,9 +7,9 @@ from bs4 import BeautifulSoup
 from urllib.parse import urljoin
 import re
 import shutil
-import fitz  
+from pathlib import Path
 
-#Config
+# CONFIG 
 
 BASE_URL = "https://pastpapers.papacambridge.com"
 
@@ -27,7 +26,10 @@ SUBJECTS = {
     "Further Maths": "mathematics-9231"
 }
 
-#UI SETUP
+BASE_DIR = Path.home() / "Documents" / "CambridgePastPapers"
+BASE_DIR.mkdir(parents=True, exist_ok=True)
+
+# UI 
 
 root = tk.Tk()
 root.title("Cambridge Past Paper Downloader")
@@ -35,9 +37,9 @@ root.geometry("760x560")
 root.configure(bg="#0b1220")
 root.resizable(False, False)
 
-FONT_TITLE = ("Segoe UI", 18, "bold")
-FONT_TEXT = ("Segoe UI", 11)
-FONT_LOG = ("Consolas", 9)
+FONT_TITLE = ("Arial", 18, "bold")
+FONT_TEXT = ("Arial", 11)
+FONT_LOG = ("Courier", 9)
 
 ACCENT = "#38bdf8"
 CARD_BG = "#111827"
@@ -74,15 +76,12 @@ year_to = ttk.Combobox(controls, values=[str(y) for y in range(2000, 2026)], wid
 year_to.grid(row=0, column=5)
 year_to.set("2024")
 
-# Download type
 tk.Label(controls, text="Type", fg="white", bg=CARD_BG).grid(row=1, column=0, padx=6, pady=8)
 type_var = tk.StringVar(value="ALL")
 type_box = ttk.Combobox(
-    controls,
-    textvariable=type_var,
+    controls, textvariable=type_var,
     values=["QP", "MS", "BOTH", "ALL"],
-    state="readonly",
-    width=10
+    state="readonly", width=10
 )
 type_box.grid(row=1, column=1, padx=6)
 type_box.current(3)
@@ -94,40 +93,34 @@ log_box.pack(pady=10)
 log_box.config(state="disabled")
 
 def log(msg, color="#e5e7eb"):
-    log_box.config(state="normal")
-    log_box.insert(tk.END, msg + "\n")
-    log_box.tag_add(color, "end-2l", "end-1l")
-    log_box.tag_config(color, foreground=color)
-    log_box.see(tk.END)
-    log_box.config(state="disabled")
+    def _log():
+        log_box.config(state="normal")
+        log_box.insert(tk.END, msg + "\n")
+        log_box.tag_add(color, "end-2l", "end-1l")
+        log_box.tag_config(color, foreground=color)
+        log_box.see(tk.END)
+        log_box.config(state="disabled")
 
-# Years feature
+    root.after(0, _log)
+
+
+# HELPERS 
 
 def year_allowed(filename, y_from, y_to):
     matches = re.findall(r"[msw](\d{2})", filename.lower())
     if not matches:
         return True
-    for yy in matches:
-        year = 2000 + int(yy)
-        if y_from <= year <= y_to:
-            return True
-    return False
+    return any(y_from <= 2000 + int(yy) <= y_to for yy in matches)
 
-def get_first_page_text(pdf_path):
-    try:
-        doc = fitz.open(pdf_path)
-        text = doc.load_page(0).get_text().lower()
-        doc.close()
-        return text
-    except:
-        return ""
+def detect_paper_from_filename(filename: str):
+    match = re.search(r"(qp|ms|sp|sm)_([1-9])\d", filename.lower())
+    if match:
+        return f"Paper {match.group(2)}"
+    return "Other Papers"
 
-#Paper number detector
-def detect_paper(text):
-    match = re.search(r"paper\s*([1-5])", text)
-    return f"Paper {match.group(1)}" if match else "Other Papers"
 
-#Async core
+
+# ASYNC CORE 
 
 async def fetch(session, url):
     try:
@@ -145,7 +138,7 @@ async def download_file(session, file_url, subject, y_from, y_to, mode):
     if not year_allowed(filename, y_from, y_to):
         return
 
-    # Sorts files
+    # Type filtering
     if mode == "QP" and "qp" not in filename:
         return
     if mode == "MS" and "ms" not in filename:
@@ -153,51 +146,46 @@ async def download_file(session, file_url, subject, y_from, y_to, mode):
     if mode == "BOTH" and not any(x in filename for x in ("qp", "ms")):
         return
 
-    temp_dir = os.path.join(subject, "_temp")
-    os.makedirs(temp_dir, exist_ok=True)
-    temp_path = os.path.join(temp_dir, filename)
+    temp_dir = BASE_DIR / subject / "_temp"
+    temp_dir.mkdir(parents=True, exist_ok=True)
+    temp_path = temp_dir / filename
 
-    if os.path.exists(temp_path):
+    if temp_path.exists():
         return
 
     try:
         async with session.get(file_url) as r:
             if r.status != 200:
                 return
-            with open(temp_path, "wb") as f:
-                f.write(await r.read())
+            temp_path.write_bytes(await r.read())
 
-        paper = "Papers"
-        if mode != "ALL":
-            text = get_first_page_text(temp_path)
-            paper = detect_paper(text)
+        paper = detect_paper_from_filename(filename)
 
-        # ---- DESTINATION ----
+        # Destination logic
         if mode == "QP":
-            dest = os.path.join(subject, paper, "Question Papers")
+            dest = BASE_DIR / subject / paper / "Question Papers"
         elif mode == "MS":
-            dest = os.path.join(subject, paper, "Mark Schemes")
+            dest = BASE_DIR / subject / paper / "Mark Schemes"
         elif mode == "BOTH":
-            dest = os.path.join(
-                subject,
-                paper,
+            dest = BASE_DIR / subject / paper / (
                 "Question Papers" if "qp" in filename else "Mark Schemes"
             )
         else:  # ALL
             if "qp" in filename:
-                dest = os.path.join(subject, paper, "Question Papers")
+                dest = BASE_DIR / subject / paper / "Question Papers"
             elif "ms" in filename:
-                dest = os.path.join(subject, paper, "Mark Schemes")
+                dest = BASE_DIR / subject / paper / "Mark Schemes"
             else:
-                dest = os.path.join(subject, paper, "Misc")
+                dest = BASE_DIR / subject / paper / "Misc"
 
-        os.makedirs(dest, exist_ok=True)
-        shutil.move(temp_path, os.path.join(dest, filename))
+        dest.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(temp_path), str(dest / filename))
 
         log(f"✔ {paper} | {filename}", "#22c55e")
 
-    except:
+    except Exception:
         log(f"❌ Error: {filename}", "#ef4444")
+
 
 async def process_page(session, url, subject, y_from, y_to, mode):
     soup = BeautifulSoup(await fetch(session, url), "lxml")
@@ -209,11 +197,10 @@ async def process_page(session, url, subject, y_from, y_to, mode):
     ])
 
 async def main_async(subject, y_from, y_to, mode):
-    subject_dir = subject.lower()
-    os.makedirs(subject_dir, exist_ok=True)
+    log(f"📁 Download directory: {BASE_DIR}", "#38bdf8")
+    log("🔍 Scanning pages...", "#38bdf8")
 
     subject_url = f"{BASE_URL}/papers/caie/as-and-a-level-{SUBJECTS[subject]}"
-    log("🔍 Scanning pages...", "#38bdf8")
 
     async with aiohttp.ClientSession() as session:
         soup = BeautifulSoup(await fetch(session, subject_url), "lxml")
@@ -221,13 +208,13 @@ async def main_async(subject, y_from, y_to, mode):
 
         await asyncio.gather(*[
             process_page(session, urljoin(BASE_URL, p["href"]),
-                         subject_dir, y_from, y_to, mode)
+                         subject, y_from, y_to, mode)
             for p in pages if p.get("href")
         ])
 
     log("\n✅ All downloads completed.", "#38bdf8")
 
-
+# Start
 
 def start():
     log_box.config(state="normal")
@@ -248,7 +235,7 @@ def start():
 
 start_btn = tk.Label(card, text="Start Download",
                      bg=ACCENT, fg="#020617",
-                     font=("Segoe UI", 12, "bold"),
+                     font=("Arial", 12, "bold"),
                      padx=20, pady=8, cursor="hand2")
 start_btn.pack(pady=10)
 start_btn.bind("<Button-1>", lambda e: start())
