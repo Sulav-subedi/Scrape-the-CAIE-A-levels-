@@ -28,6 +28,10 @@ SUBJECTS = {
 
 BASE_DIR = Path.home() / "Documents" / "CambridgePastPapers"
 BASE_DIR.mkdir(parents=True, exist_ok=True)
+MAX_CONCURRENT_REQUESTS = 6     
+REQUEST_DELAY = 0.2           
+semaphore = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
+
 
 # UI 
 
@@ -90,6 +94,16 @@ log_box = tk.Text(card, height=16, width=86,
                   bg=LOG_BG, fg="#e5e7eb",
                   font=FONT_LOG, bd=0)
 log_box.pack(pady=10)
+
+footer = tk.Label(
+    card,
+    text="Made by Sulav",
+    font=("Arial", 9),
+    fg="#64748b",
+    bg=CARD_BG
+)
+footer.pack(side="bottom", pady=(0, 8))
+
 log_box.config(state="disabled")
 
 def log(msg, color="#e5e7eb"):
@@ -123,11 +137,14 @@ def detect_paper_from_filename(filename: str):
 # ASYNC CORE 
 
 async def fetch(session, url):
-    try:
-        async with session.get(url) as r:
-            return await r.text() if r.status == 200 else ""
-    except:
-        return ""
+    async with semaphore:
+        await asyncio.sleep(REQUEST_DELAY)
+        try:
+            async with session.get(url) as r:
+                return await r.text() if r.status == 200 else ""
+        except:
+            return ""
+
 
 async def download_file(session, file_url, subject, y_from, y_to, mode):
     if not file_url.startswith("http"):
@@ -154,10 +171,14 @@ async def download_file(session, file_url, subject, y_from, y_to, mode):
         return
 
     try:
-        async with session.get(file_url) as r:
-            if r.status != 200:
-                return
-            temp_path.write_bytes(await r.read())
+        async with semaphore:
+            await asyncio.sleep(REQUEST_DELAY)
+            async with session.get(file_url) as r:
+                if r.status != 200:
+                    return
+                temp_path.write_bytes(await r.read())
+
+
 
         paper = detect_paper_from_filename(filename)
 
