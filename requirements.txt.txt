@@ -1,3 +1,4 @@
 aiohttp
 lxml
 beautifulsoup4
+customtkinter
