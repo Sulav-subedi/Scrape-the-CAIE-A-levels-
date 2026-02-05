@@ -38,6 +38,23 @@ Step 6 : run the python file in cloned folder
 2. aiohttp
 3. beautifulsoup4
 4. lxml
+5. customtkinter
+
+## macOS Compatibility
+Yes — this app can run on macOS because it uses cross-platform Python libraries (`aiohttp`, `BeautifulSoup`, `customtkinter`, and the built-in `tkinter`).
+
+Quick setup on macOS:
+1. Install Python 3.9+ (python.org installer is recommended so `tkinter` is included).
+2. Install dependencies:
+   ```bash
+   pip install -r requirements.txt.txt
+   ```
+3. Run the app:
+   ```bash
+   python "Scrape the CAIE ( A levels ).py"
+   ```
+
+If you get a `tkinter`/Tcl-Tk error, reinstall Python from python.org or install a Tk-enabled Python build.
 
 ## How It Works
 Scrapes publicly accessible CAIE past paper listings
